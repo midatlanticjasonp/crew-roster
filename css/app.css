@@ -208,3 +208,8 @@ table.bd{border-collapse:collapse;width:100%;table-layout:fixed}
   .actions{margin-left:0}
   .legend{margin-left:0}
 }
+/* keep roster columns readable on smaller screens – table scrolls sideways instead of squeezing */
+table.sheet.roster{min-width:1450px}
+.roster td.name{min-width:175px}
+.roster td.name input{min-width:170px}
+.roster td:nth-child(4){min-width:140px}
