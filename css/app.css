@@ -171,7 +171,7 @@ table.bd{border-collapse:collapse;width:100%;table-layout:fixed}
 .bd td.vcell{vertical-align:top;padding-top:10px}
 .bd td.vcell .vname{font-size:14px;margin-bottom:22px}
 .bd td.vcell div{margin-bottom:18px}
-.bd td.pos{text-align:left;padding-left:6px;vertical-align:top;padding-top:8px}
+.bd td.pos{text-align:left;padding-left:6px;vertical-align:middle}
 .bd .ent{display:block}
 .bd .ent+.ent{margin-top:3px;padding-top:3px;border-top:1px dashed #b7c0cc}
 .bd .lbl{display:block;font-weight:600}
@@ -208,6 +208,7 @@ table.bd{border-collapse:collapse;width:100%;table-layout:fixed}
   .actions{margin-left:0}
   .legend{margin-left:0}
 }
+
 /* keep roster columns readable on smaller screens – table scrolls sideways instead of squeezing */
 table.sheet.roster{min-width:1450px}
 .roster td.name{min-width:175px}
