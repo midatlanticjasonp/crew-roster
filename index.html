@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Crew Roster</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%231F3864'/><path d='M7 9h18M7 16h18M7 23h18M13 6v20' stroke='white' stroke-width='2.4'/></svg>">
+<link rel="stylesheet" href="css/app.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js" defer></script>
+</head>
+<body>
+<header class="topbar no-print">
+  <div class="brand">
+    <span class="brand-mark" aria-hidden="true"></span>
+    <div>
+      <div class="brand-title">Crew Roster</div>
+      <div class="brand-sub" id="companyName">—</div>
+    </div>
+  </div>
+
+  <div class="weeknav" role="group" aria-label="Week">
+    <button class="btn icon" id="prevWeek" title="Previous week" aria-label="Previous week">‹</button>
+    <label class="weekpick">
+      <span class="weekpick-label">Week ending</span>
+      <select id="weekSelect" aria-label="Week ending"></select>
+    </label>
+    <button class="btn icon" id="nextWeek" title="Next week" aria-label="Next week">›</button>
+    <span class="status-pill" id="statusPill">Draft</span>
+  </div>
+
+  <div class="actions">
+    <span class="save-state" id="saveState" aria-live="polite"></span>
+    <button class="btn" id="newWeekBtn">Start new week</button>
+    <button class="btn" id="printLookahead">Print look-ahead</button>
+    <button class="btn primary" id="printConfirmed">Print confirmed</button>
+    <button class="btn" id="exportExcel">Export Excel</button>
+  </div>
+</header>
+
+<div class="banner no-print" id="modeBanner" hidden></div>
+
+<nav class="tabs no-print" role="tablist">
+  <button role="tab" class="tab active" data-tab="roster">Roster</button>
+  <button role="tab" class="tab" data-tab="breakdown">Daily Breakdown</button>
+  <button role="tab" class="tab" data-tab="checks">Checks <span class="badge" id="checksBadge" hidden>0</span></button>
+  <button role="tab" class="tab" data-tab="crew">Crew</button>
+  <button role="tab" class="tab" data-tab="vessels">Vessels &amp; Manning</button>
+  <button role="tab" class="tab" data-tab="settings">Settings &amp; Data</button>
+</nav>
+
+<main>
+  <!-- ROSTER -->
+  <section class="panel active" id="tab-roster" role="tabpanel">
+    <div class="weekhead no-print">
+      <div class="field"><label for="wkPortCaptain">Port Captain</label><input id="wkPortCaptain" type="text"></div>
+      <div class="field"><label for="wkPrepared">Prepared by</label><input id="wkPrepared" type="text"></div>
+      <div class="field"><label for="wkChecked">Checked by</label><input id="wkChecked" type="text"></div>
+      <div class="legend" id="legend"></div>
+    </div>
+    <div class="sheet-wrap"><table class="sheet roster" id="rosterTable"></table></div>
+    <datalist id="crewNames"></datalist>
+  </section>
+
+  <!-- BREAKDOWN -->
+  <section class="panel" id="tab-breakdown" role="tabpanel">
+    <div class="toolbar no-print">
+      <label class="check"><input type="checkbox" id="showEmptyLines" checked> Show empty lines for unfilled positions</label>
+      <span class="hint">This is exactly what prints. Edit on the Roster tab – this page rebuilds itself.</span>
+    </div>
+    <div id="breakdown"></div>
+  </section>
+
+  <!-- CHECKS -->
+  <section class="panel" id="tab-checks" role="tabpanel">
+    <div class="checks" id="checksList"></div>
+  </section>
+
+  <!-- CREW -->
+  <section class="panel" id="tab-crew" role="tabpanel">
+    <div class="toolbar">
+      <input type="search" id="crewSearch" placeholder="Search crew…" aria-label="Search crew">
+      <label class="check"><input type="checkbox" id="crewShowInactive"> Show inactive</label>
+      <button class="btn" id="addCrew">+ Add crew member</button>
+    </div>
+    <div class="sheet-wrap"><table class="sheet crewtable" id="crewTable"></table></div>
+  </section>
+
+  <!-- VESSELS -->
+  <section class="panel" id="tab-vessels" role="tabpanel">
+    <div class="toolbar">
+      <button class="btn" id="addVessel">+ Add vessel</button>
+      <span class="hint">Required numbers only drive the "short-handed" checks. The printout always grows to fit everyone on the roster.</span>
+    </div>
+    <div id="vesselsList" class="vessels"></div>
+  </section>
+
+  <!-- SETTINGS -->
+  <section class="panel" id="tab-settings" role="tabpanel">
+    <div class="settings-grid">
+      <div class="card">
+        <h3>General</h3>
+        <div class="field"><label for="setCompany">Company</label><input id="setCompany" type="text"></div>
+        <div class="field"><label for="setPortCaptain">Default Port Captain</label><input id="setPortCaptain" type="text"></div>
+      </div>
+      <div class="card">
+        <h3>Data &amp; backup</h3>
+        <p class="hint" id="storageInfo"></p>
+        <div class="btnrow">
+          <button class="btn" id="backupJson">Download backup (.json)</button>
+          <label class="btn file">Restore from backup…<input type="file" id="restoreJson" accept=".json,application/json" hidden></label>
+        </div>
+        <p class="hint">First time? Use <b>Restore from backup</b> with the <code>starter-data.json</code> file to load your crew, vessels and current week.</p>
+        <div class="btnrow" id="authRow" hidden>
+          <button class="btn" id="signOut">Sign out</button>
+        </div>
+      </div>
+      <div class="card wide">
+        <h3>Day codes</h3>
+        <p class="hint">"Counts toward manning" = fills a position for the short-handed check. "Paid" = counts as a paid day.</p>
+        <table class="sheet codes" id="codesTable"></table>
+        <button class="btn" id="addCode">+ Add code</button>
+      </div>
+      <div class="card">
+        <h3>Positions</h3>
+        <p class="hint">Order here = order on the printout.</p>
+        <table class="sheet" id="positionsTable"></table>
+        <button class="btn" id="addPosition">+ Add position</button>
+      </div>
+    </div>
+  </section>
+</main>
+
+<!-- Print-only stamp is rendered inside each vessel page -->
+<dialog id="dlg" class="dlg">
+  <form method="dialog">
+    <h3 id="dlgTitle"></h3>
+    <div id="dlgBody"></div>
+    <div class="dlg-actions">
+      <button value="cancel" class="btn" id="dlgCancel">Cancel</button>
+      <button value="ok" class="btn primary" id="dlgOk">OK</button>
+    </div>
+  </form>
+</dialog>
+
+<div class="signin" id="signin" hidden>
+  <div class="card">
+    <h2>Crew Roster</h2>
+    <p>Sign in with the Google account allowed in your Firebase rules.</p>
+    <button class="btn primary" id="signInBtn">Sign in with Google</button>
+    <p class="hint" id="signinMsg"></p>
+  </div>
+</div>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
