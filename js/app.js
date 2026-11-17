@@ -223,6 +223,8 @@ function bindRoster() {
 }
 
 // ---------------------------------------------------------------- DAILY BREAKDOWN
+// One label per printed line: MATE 1, MATE 2 … (ranks already ending in a number get brackets: ENGINEER 2 (1)).
+const posLabel = (pos, i, n) => (n < 2 ? pos : /\d$/.test(pos) ? `${pos} (${i + 1})` : `${pos} ${i + 1}`);
 function stampFor() {
   if (S.printStamp) return S.printStamp;
   const st = S.week.status;
@@ -244,7 +246,7 @@ function renderBreakdown() {
       ${vessel.contact ? `<div>${esc(vessel.contact)}</div>` : ""}</td>`;
     for (const g of groups) {
       g.rows.forEach((r, ri) => {
-        rows += "<tr>" + (first ? vcell : "") + (ri === 0 ? `<td class="pos" rowspan="${g.rows.length}">${esc(g.position)}</td>` : "");
+        rows += "<tr>" + (first ? vcell : "") + `<td class="pos">${esc(posLabel(g.position, ri, g.rows.length))}</td>`;
         first = false;
         rows += r.map((ents) => {
           if (!ents.length) return `<td class="${ri >= 0 && g.rows.indexOf(r) >= 0 && r.every((x) => !x.length) ? "" : ""}"></td>`;
