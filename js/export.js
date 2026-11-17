@@ -40,8 +40,10 @@ export async function exportExcel(ExcelJS, week, meta, crewById, { stamp } = {})
     r++;
     const top = r;
     for (const g of groups) {
-      const gTop = r;
-      for (const row of g.rows) {
+      for (const [ri, row] of g.rows.entries()) {
+        const pc = ws.getCell(r, 2);
+        pc.value = g.rows.length < 2 ? g.position : /\d$/.test(g.position) ? `${g.position} (${ri + 1})` : `${g.position} ${ri + 1}`;
+        pc.font = { bold: true, size: 10 }; pc.alignment = { vertical: "middle", horizontal: "left" };
         row.forEach((ents, di) => {
           const c = ws.getCell(r, 3 + di);
           c.value = ents.map((e) => e.name + (e.text ? "\n" + e.text : "")).join("\n");
@@ -55,8 +57,6 @@ export async function exportExcel(ExcelJS, week, meta, crewById, { stamp } = {})
         ws.getCell(r, 2).border = box;
         r++;
       }
-      if (r - 1 > gTop) ws.mergeCells(gTop, 2, r - 1, 2);
-      const pc = ws.getCell(gTop, 2); pc.value = g.position; pc.font = { bold: true, size: 10 }; pc.alignment = { vertical: "top", horizontal: "left" }; pc.border = box;
     }
     if (r === top) { for (let c = 2; c <= 9; c++) ws.getCell(r, c).border = box; r++; }
     if (r - 1 > top) ws.mergeCells(top, 1, r - 1, 1);
