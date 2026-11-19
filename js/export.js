@@ -23,15 +23,23 @@ export async function exportExcel(ExcelJS, week, meta, crewById, { stamp } = {})
   ws.columns = [{ width: 22 }, { width: 22 }, ...dates.map(() => ({ width: 19 }))];
   let r = 1;
   const bd = M.buildBreakdown(week, meta, crewById, { showEmpty: true });
+  const sig = stamp?.mode === "confirmed" && meta.settings.signature?.dataUrl;
+  let sigId = null, sigW = 0, sigH = 0;
+  if (sig) {
+    sigId = wb.addImage({ base64: sig, extension: "png" });
+    const dim = await new Promise((res) => { const i = new Image(); i.onload = () => res([i.naturalWidth, i.naturalHeight]); i.onerror = () => res([300, 100]); i.src = sig; });
+    sigH = 30; sigW = Math.round((dim[0] / dim[1]) * sigH);
+  }
   bd.forEach(({ vessel, groups, notes }, vi) => {
     if (vi > 0) { ws.getRow(r - 1).addPageBreak(); }
     ws.mergeCells(r, 1, r, 9);
-    Object.assign(ws.getCell(r, 1), { value: `VESSELS - WEEKLY ROSTER   [${stampTxt}]` });
+    Object.assign(ws.getCell(r, 1), { value: stamp?.mode === "confirmed" ? "VESSELS - WEEKLY ROSTER" : `VESSELS - WEEKLY ROSTER   [${stampTxt}]` });
     ws.getCell(r, 1).font = { bold: true, size: 14, color: { argb: NAVY } }; ws.getCell(r, 1).alignment = { horizontal: "center" };
     r += 2;
     ws.getCell(r, 1).value = `COMPANY: ${meta.settings.company || ""}`;
     ws.getCell(r, 4).value = "Week Ending:"; ws.getCell(r, 5).value = M.fmtShort(week.weekEnding);
     ws.getCell(r, 7).value = "Port Captain:"; ws.getCell(r, 8).value = week.portCaptain || "";
+    if (sigId !== null) ws.addImage(sigId, { tl: { col: 8.05, row: r - 1.3 }, ext: { width: sigW, height: sigH }, editAs: "oneCell" });
     [1, 4, 5, 7, 8].forEach((c) => (ws.getCell(r, c).font = { bold: true }));
     r += 2;
     const hdr = ["VESSEL", "CREW", ...dates.map((d, i) => M.dayHeader(d, i))];
@@ -65,12 +73,14 @@ export async function exportExcel(ExcelJS, week, meta, crewById, { stamp } = {})
     vc.font = { bold: true, size: 11 }; vc.alignment = { horizontal: "center", vertical: "top", wrapText: true }; vc.border = box;
     r++;
     ws.getCell(r, 1).value = "Notes:"; ws.getCell(r, 1).font = { bold: true };
-    if (!notes.length) r++;
-    for (const n of notes) { ws.mergeCells(r, 2, r, 9); const c = ws.getCell(r, 2); c.value = `${n.name} – ${n.note}`; c.alignment = { wrapText: true, vertical: "top" }; c.font = { size: 9 }; ws.getRow(r).height = Math.max(15, Math.ceil(n.note.length / 150) * 13); r++; }
+    const noteLines = [...(week.vesselNotes?.[vessel.id] || "").split("\n").map((s) => s.trim()).filter(Boolean), ...notes.map((n) => `${n.name} – ${n.note}`)];
+    if (!noteLines.length) r++;
+    for (const t of noteLines) { ws.mergeCells(r, 2, r, 9); const c = ws.getCell(r, 2); c.value = t; c.alignment = { wrapText: true, vertical: "top" }; c.font = { size: 9 }; ws.getRow(r).height = Math.max(15, Math.ceil(t.length / 150) * 13); r++; }
     r++;
     ws.getCell(r, 1).value = `Prepared by: ${week.preparedBy || "____________"}`;
     ws.getCell(r, 4).value = `Checked by: ${week.checkedBy || "____________"}`;
     ws.getCell(r, 7).value = "Port Captain: ____________";
+    if (sigId !== null) ws.addImage(sigId, { tl: { col: 7.25, row: r - 1.5 }, ext: { width: sigW, height: sigH }, editAs: "oneCell" });
     for (const c of [1, 4, 7]) ws.getCell(r, c).font = { size: 9, color: { argb: "FF595959" } };
     r += 3;
   });
