@@ -147,7 +147,7 @@ function renderRoster() {
   if (!S.meta.vessels.length) html += `<tr><td colspan="15" style="padding:16px">No vessels yet. Add them on the <b>Vessels &amp; Manning</b> tab, or load your starter data in <b>Settings &amp; Data</b>.</td></tr>`;
   html += "</tbody>";
   $("#rosterTable").innerHTML = html;
-  $("#crewNames").innerHTML = S.crew.filter((c) => c.active !== false).map((c) => `<option value="${esc(c.name)}">${esc([c.fullName, c.rank].filter(Boolean).join(" · "))}</option>`).join("");
+  $("#crewNames").innerHTML = S.crew.filter((c) => c.active !== false && !c.deleted).map((c) => `<option value="${esc(c.name)}">${esc([c.fullName, c.rank].filter(Boolean).join(" · "))}</option>`).join("");
 }
 function lineById(id) { return S.week.lines.find((l) => l.id === id); }
 function refreshRow(l) {
@@ -162,8 +162,14 @@ function refreshRow(l) {
 async function resolveCrewName(raw, position) {
   const name = raw.trim().toUpperCase().replace(/\s+/g, " ").replace(/^([A-Z])\s+(?=[A-Z])/, "$1. ");
   if (!name) return "";
-  const hit = S.crew.find((c) => c.name === name) || S.crew.find((c) => c.name.replace(/[.\s]/g, "") === name.replace(/[.\s]/g, ""));
+  const live = S.crew.filter((c) => !c.deleted);
+  const hit = live.find((c) => c.name === name) || live.find((c) => c.name.replace(/[.\s]/g, "") === name.replace(/[.\s]/g, ""));
   if (hit) return hit.id;
+  const gone = S.crew.find((c) => c.deleted && c.name.replace(/[.\s]/g, "") === name.replace(/[.\s]/g, ""));
+  if (gone) {
+    if (!(await dialog("Bring back deleted crew member?", `<p><b>${esc(gone.name)}</b> was deleted from the crew list. Restore them and put them on this line?</p>`, { ok: "Restore" }))) return null;
+    gone.deleted = false; gone.active = true; delete gone.deletedAt; reindexCrew(); scheduleSave("crew"); return gone.id;
+  }
   const ok = await dialog("New crew member?", `<p><b>${esc(name)}</b> isn't in the crew list.</p><p>Add them now? You can fill in their full name, phone and certificates on the Crew tab later.</p>`, { ok: "Add to crew list" });
   if (!ok) return null;
   const c = { id: nextCrewId(), name, fullName: "", rank: position || "", phone: "", email: "", dayRate: null, cocExpiry: "", medicalExpiry: "", offshoreExpiry: "", active: true, notes: "" };
@@ -313,11 +319,13 @@ function jumpTo(lineId) {
 function renderCrew() {
   const q = $("#crewSearch").value.trim().toUpperCase();
   const showInactive = $("#crewShowInactive").checked;
+  const showDeleted = $("#crewShowDeleted")?.checked;
+  renderDupPanel();
   const onWeek = new Map(); S.week.lines.forEach((l) => { if (l.crewId && M.hasDays(l)) onWeek.set(l.crewId, S.meta.vessels.find((v) => v.id === l.vessel)?.name || ""); });
-  const list = S.crew.filter((c) => (showInactive || c.active !== false) && (!q || [c.name, c.fullName, c.rank, c.phone, c.id].join(" ").toUpperCase().includes(q)));
+  const list = S.crew.filter((c) => (c.deleted ? showDeleted : (showInactive || c.active !== false)) && (!q || [c.name, c.fullName, c.rank, c.phone, c.id].join(" ").toUpperCase().includes(q)));
   const posOpts = (sel) => `<option value=""></option>` + [...new Set([...(settings().positions || []), sel].filter(Boolean))].map((p) => `<option ${p === sel ? "selected" : ""}>${esc(p)}</option>`).join("");
-  $("#crewTable").innerHTML = `<thead><tr><th>ID</th><th>Roster name</th><th>Full name</th><th>Rank</th><th>Phone</th><th>Email</th><th>CoC expiry</th><th>Medical expiry</th><th>Offshore safety expiry</th><th>Certificates</th><th>This week</th><th>Active</th><th>Notes</th></tr></thead><tbody>` +
-    list.map((c) => { const cs = M.certStatus(c, S.week.weekEnding); return `<tr data-crew="${esc(c.id)}">
+  $("#crewTable").innerHTML = `<thead><tr><th>ID</th><th>Roster name</th><th>Full name</th><th>Rank</th><th>Phone</th><th>Email</th><th>CoC expiry</th><th>Medical expiry</th><th>Offshore safety expiry</th><th>Certificates</th><th>This week</th><th>Active</th><th>Notes</th><th></th></tr></thead><tbody>` +
+    list.map((c) => { const cs = M.certStatus(c, S.week.weekEnding); return `<tr data-crew="${esc(c.id)}" class="${c.deleted ? "deleted" : ""}">
       <td><input data-cf="id" value="${esc(c.id)}" style="width:80px"></td>
       <td><input data-cf="name" value="${esc(c.name)}" style="min-width:150px;font-weight:600"></td>
       <td><input data-cf="fullName" value="${esc(c.fullName)}" style="min-width:150px"></td>
@@ -330,7 +338,10 @@ function renderCrew() {
       <td class="cert ${cs.cls}">${esc(cs.text)}</td>
       <td class="ro">${esc((onWeek.get(c.id) || "").replace(/^MV /, ""))}</td>
       <td style="text-align:center"><input data-cf="active" type="checkbox" ${c.active !== false ? "checked" : ""} style="width:auto;min-height:0"></td>
-      <td><input data-cf="notes" value="${esc(c.notes)}" style="min-width:220px"></td></tr>`; }).join("") + "</tbody>";
+      <td><input data-cf="notes" value="${esc(c.notes)}" style="min-width:220px"></td>
+      <td style="white-space:nowrap;padding:0 4px">${c.deleted
+        ? `<button class="btn small" data-crewact="restore">Restore</button>`
+        : `<button class="btn small danger" data-crewact="delete" title="Delete – for crew who have left">Delete</button>`}</td></tr>`; }).join("") + "</tbody>";
 }
 function bindCrew() {
   const xb = document.createElement("button"); xb.className = "btn"; xb.id = "exportCrew"; xb.textContent = "Export to Excel";
@@ -338,11 +349,29 @@ function bindCrew() {
   xb.addEventListener("click", async () => {
     if (!window.ExcelJS) { await dialog("Excel export unavailable", "<p>The Excel library didn't load – check your internet connection and reload the page.</p>", { cancel: "" }); return; }
     const onWeek = new Map(); S.week.lines.forEach((l) => { if (l.crewId && M.hasDays(l)) onWeek.set(l.crewId, S.meta.vessels.find((v) => v.id === l.vessel)?.name || ""); });
-    const blob = await exportCrewExcel(window.ExcelJS, S.crew, S.meta, S.week, { onWeek });
+    const blob = await exportCrewExcel(window.ExcelJS, S.crew.filter((c) => !c.deleted), S.meta, S.week, { onWeek });
     download(blob, `Crew List ${new Date().toISOString().slice(0, 10)}.xlsx`);
   });
+  const sd = document.createElement("label"); sd.className = "check";
+  sd.innerHTML = `<input type="checkbox" id="crewShowDeleted"> Show deleted`;
+  $("#crewShowInactive").closest("label").after(sd);
+  const dp = document.createElement("div"); dp.id = "dupPanel"; $("#crewTable").closest(".sheet-wrap").before(dp);
+  $("#crewShowDeleted").addEventListener("change", renderCrew);
   $("#crewSearch").addEventListener("input", renderCrew);
   $("#crewShowInactive").addEventListener("change", renderCrew);
+  $("#crewTable").addEventListener("click", async (e) => {
+    const b = e.target.closest("[data-crewact]"); if (!b) return;
+    const c = S.crew.find((x) => x.id === b.closest("tr").dataset.crew); if (!c) return;
+    if (b.dataset.crewact === "delete") await deleteCrew(c); else await restoreCrew(c);
+  });
+  dp.addEventListener("click", async (e) => {
+    const b = e.target.closest("[data-dup]"); if (!b) return;
+    const [a, z] = b.dataset.pair.split("|").map((id) => S.crew.find((c) => c.id === id));
+    if (!a || !z) return;
+    if (b.dataset.dup === "keepA") await mergeCrew(a, z);
+    if (b.dataset.dup === "keepB") await mergeCrew(z, a);
+    if (b.dataset.dup === "notdup") { (settings().notDuplicates ||= []).push(pairKey(a, z)); scheduleSave("meta"); renderCrew(); }
+  });
   $("#addCrew").addEventListener("click", () => {
     const c = { id: nextCrewId(), name: "NEW CREW", fullName: "", rank: "", phone: "", email: "", dayRate: null, cocExpiry: "", medicalExpiry: "", offshoreExpiry: "", active: true, notes: "" };
     S.crew.unshift(c); reindexCrew(); scheduleSave("crew"); $("#crewSearch").value = ""; renderCrew();
@@ -354,7 +383,7 @@ function bindCrew() {
     if (f === "active") c.active = el.checked;
     else if (f === "name") {
       const v = el.value.trim().toUpperCase().replace(/\s+/g, " ");
-      if (S.crew.some((x) => x !== c && x.name === v)) { await dialog("Name already used", `<p><b>${esc(v)}</b> is already in the crew list. Roster names must be unique so payroll can't mix people up – add a first name or initial.</p>`, { cancel: "" }); el.value = c.name; return; }
+      if (S.crew.some((x) => x !== c && !x.deleted && x.name === v)) { await dialog("Name already used", `<p><b>${esc(v)}</b> is already in the crew list. Roster names must be unique so payroll can't mix people up – add a first name or initial.</p>`, { cancel: "" }); el.value = c.name; return; }
       c.name = v; el.value = v;
     } else if (f === "id") {
       const v = el.value.trim(); if (!v || S.crew.some((x) => x !== c && x.id === v)) { el.value = c.id; return; }
@@ -365,6 +394,96 @@ function bindCrew() {
     if (["cocExpiry", "medicalExpiry", "offshoreExpiry"].includes(f)) renderCrew();
     refreshChecksBadge();
   });
+}
+
+// ---------------------------------------------------------------- DELETE / RESTORE / DUPLICATES
+async function deleteCrew(c) {
+  const mine = S.week.lines.filter((l) => l.crewId === c.id);
+  const worked = mine.filter(M.hasDays);
+  const where = [...new Set(worked.map((l) => S.meta.vessels.find((v) => v.id === l.vessel)?.name || "?"))].join(", ");
+  const ok = await dialog(`Delete ${c.name}?`, `<p>They'll be removed from the crew list, the name dropdowns and the crew export.</p>
+    ${worked.length ? `<p>They have days entered on this week's roster (${esc(where)}). Those stay, so payroll still sees the days worked – they just won't carry over into next week.</p>` : ""}
+    <p class="hint">Past weeks keep their name. You can undo this with <b>Show deleted → Restore</b>.</p>`, { ok: "Delete", danger: true });
+  if (!ok) return;
+  S.week.lines = S.week.lines.filter((l) => l.crewId !== c.id || M.hasDays(l));
+  S.week.lines.forEach((l) => { if (l.relievingCrewId === c.id && !worked.length) l.relievingCrewId = ""; });
+  c.deleted = true; c.active = false; c.deletedAt = new Date().toISOString();
+  reindexCrew(); scheduleSave("crew"); scheduleSave("week"); renderCrew(); refreshChecksBadge();
+}
+async function restoreCrew(c) {
+  if (S.crew.some((x) => x !== c && !x.deleted && x.name === c.name)) {
+    await dialog("Can't restore", `<p>Someone else is now called <b>${esc(c.name)}</b> in the crew list. Rename one of them first.</p>`, { cancel: "" }); return;
+  }
+  c.deleted = false; c.active = true; delete c.deletedAt;
+  reindexCrew(); scheduleSave("crew"); renderCrew();
+}
+const pairKey = (a, b) => [a.id, b.id].sort().join("|");
+function lev(a, b) { const p = [...Array(b.length + 1).keys()]; for (let i = 1; i <= a.length; i++) { let prev = p[0]; p[0] = i; for (let j = 1; j <= b.length; j++) { const t = p[j]; p[j] = Math.min(p[j] + 1, p[j - 1] + 1, prev + (a[i - 1] !== b[j - 1])); prev = t; } } return p[b.length]; }
+function findDuplicates() {
+  const live = S.crew.filter((c) => !c.deleted);
+  const dismissed = new Set(settings().notDuplicates || []);
+  const norm = (s) => String(s || "").toUpperCase().replace(/[^A-Z]/g, "");
+  const surname = (c) => { const w = String(c.name || "").toUpperCase().replace(/[^A-Z ]/g, " ").trim().split(/\s+/); return w[w.length - 1] || ""; };
+  const first = (c) => (String(c.fullName || "").trim().split(/\s+/)[0] || "").toUpperCase();
+  const initial = (c) => (first(c)[0] || String(c.name || "").toUpperCase()[0] || "");
+  const digits = (s) => String(s || "").replace(/\D/g, "");
+  const out = [];
+  for (let i = 0; i < live.length; i++) for (let j = i + 1; j < live.length; j++) {
+    const a = live[i], b = live[j]; if (dismissed.has(pairKey(a, b))) continue;
+    const why = [];
+    if (norm(a.name) === norm(b.name)) why.push("same name");
+    if (a.email && a.email.toLowerCase() === (b.email || "").toLowerCase()) why.push("same email");
+    const pa = digits(a.phone), pb = digits(b.phone);
+    if (pa.length >= 7 && pb.length >= 7 && pa.slice(-7) === pb.slice(-7)) why.push("same phone");
+    if (a.fullName && b.fullName && norm(a.fullName) === norm(b.fullName) && !why.includes("same name")) why.push("same full name");
+    if (!why.length) {
+      const sa = surname(a), sb = surname(b);
+      const firstsClash = first(a) && first(b) && first(a) !== first(b);
+      if (!firstsClash && initial(a) === initial(b) && sa.length >= 5 && sb.length >= 5 && sa !== sb && lev(sa, sb) <= 1) why.push("similar spelling");
+    }
+    if (why.length) out.push({ a, b, why });
+  }
+  return out;
+}
+function renderDupPanel() {
+  const box = $("#dupPanel"); if (!box) return;
+  const dups = findDuplicates();
+  if (!dups.length) { box.innerHTML = ""; return; }
+  const onWeek = (c) => S.week.lines.some((l) => l.crewId === c.id && M.hasDays(l));
+  const card = (c) => `<div class="dupcard"><b>${esc(c.name)}</b> <span class="hint">${esc(c.id)}</span><br>${esc(c.fullName || "—")} · ${esc(c.rank || "—")}<br>${esc(c.phone || "no phone")} · ${esc(c.email || "no email")}${onWeek(c) ? `<br><span class="onwk">On this week's roster</span>` : ""}</div>`;
+  box.innerHTML = `<details class="dups" open><summary>Possible duplicates (${dups.length}) – merge them so each person has one record</summary>
+    ${dups.map(({ a, b, why }) => `<div class="duprow"><div class="dupwhy">${esc(why.join(", "))}</div>
+      <div class="duppair">${card(a)}${card(b)}</div>
+      <div class="btnrow"><button class="btn small" data-dup="keepA" data-pair="${esc(a.id)}|${esc(b.id)}">Keep ${esc(a.name)}</button>
+      <button class="btn small" data-dup="keepB" data-pair="${esc(a.id)}|${esc(b.id)}">Keep ${esc(b.name)}</button>
+      <button class="btn small" data-dup="notdup" data-pair="${esc(a.id)}|${esc(b.id)}">Not the same person</button></div></div>`).join("")}</details>`;
+}
+async function mergeCrew(keep, drop) {
+  const ok = await dialog(`Merge into ${keep.name}?`, `<p><b>${esc(drop.name)}</b> (${esc(drop.id)}) will be removed, and every roster entry for them – this week and all past weeks – moves to <b>${esc(keep.name)}</b> (${esc(keep.id)}).</p>
+    <p>Any details ${esc(keep.name)} is missing (full name, phone, email, certificate dates) are copied over from ${esc(drop.name)}.</p>`, { ok: "Merge" });
+  if (!ok) return;
+  for (const k of ["fullName", "rank", "phone", "email", "cocExpiry", "medicalExpiry", "offshoreExpiry", "dayRate"]) if (!keep[k] && drop[k]) keep[k] = drop[k];
+  keep.notes = [...new Set([keep.notes, drop.notes].map((s) => (s || "").trim()).filter(Boolean))].join("; ");
+  if (drop.active !== false) keep.active = true;
+  setSave("Merging…");
+  try {
+    await flushSaves();
+    let moved = 0;
+    for (const id of S.meta.weekIds) {
+      const w = id === S.week.weekEnding ? S.week : await S.store.loadWeek(id);
+      if (!w) continue;
+      let changed = false;
+      (w.lines || []).forEach((l) => {
+        if (l.crewId === drop.id) { l.crewId = keep.id; changed = true; moved++; }
+        if (l.relievingCrewId === drop.id) { l.relievingCrewId = keep.id; changed = true; }
+      });
+      if (changed) await S.store.saveWeek(w);
+    }
+    S.crew = S.crew.filter((c) => c !== drop); reindexCrew();
+    await S.store.saveCrew(S.crew); setSave("All changes saved");
+    renderCrew(); refreshChecksBadge();
+    await dialog("Merged", `<p>${esc(drop.name)} merged into <b>${esc(keep.name)}</b>. ${moved} roster line(s) moved.</p>`, { cancel: "" });
+  } catch (e) { console.error(e); setSave("⚠ Merge failed"); await dialog("Merge failed", `<p>${esc(e.message)}</p><p>Nothing was removed. Check your connection and try again.</p>`, { cancel: "" }); }
 }
 
 // ---------------------------------------------------------------- VESSELS
