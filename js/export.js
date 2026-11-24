@@ -124,3 +124,35 @@ export async function exportExcel(ExcelJS, week, meta, crewById, { stamp } = {})
   const buf = await wb.xlsx.writeBuffer();
   return new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
 }
+
+// ---- Crew list (Crew tab) ----
+export async function exportCrewExcel(ExcelJS, crew, meta, week, { onWeek } = {}) {
+  const wb = new ExcelJS.Workbook(); wb.creator = "Crew Roster";
+  const ws = wb.addWorksheet("Crew", { views: [{ state: "frozen", xSplit: 2, ySplit: 1 }] });
+  const head = ["Crew ID", "Roster name", "Full name", "Rank", "Phone", "Email", "CoC / Licence expiry", "Medical expiry", "Offshore safety expiry", "Certificates", `On roster WE ${M.fmtShort(week.weekEnding)}`, "Active", "Notes"];
+  ws.addRow(head);
+  ws.getRow(1).eachCell((c) => { c.font = { bold: true, color: { argb: "FFFFFFFF" } }; c.fill = solid(NAVY); c.alignment = { horizontal: "center", vertical: "middle", wrapText: true }; c.border = box; });
+  ws.getRow(1).height = 32;
+  const toDate = (iso) => { if (!iso) return null; const [y, m, d] = iso.split("-").map(Number); return new Date(Date.UTC(y, m - 1, d)); };
+  const certFill = { ok: ["FFC6EFCE", "FF006100"], due: ["FFFFE699", "FF7F6000"], exp: ["FFF8CBAD", "FF9C0006"] };
+  const sorted = [...crew].sort((a, b) => (a.active === false) - (b.active === false) || String(a.name).localeCompare(String(b.name)));
+  for (const c of sorted) {
+    const cs = M.certStatus(c, week.weekEnding);
+    const row = ws.addRow([c.id || "", c.name || "", c.fullName || "", c.rank || "", c.phone || "", c.email || "",
+      toDate(c.cocExpiry), toDate(c.medicalExpiry), toDate(c.offshoreExpiry), cs.text, (onWeek?.get(c.id) || "").replace(/^MV /, ""),
+      c.active === false ? "No" : "Yes", c.notes || ""]);
+    row.eachCell({ includeEmpty: true }, (cell, ci) => {
+      cell.border = box; cell.alignment = { vertical: "middle", wrapText: ci === 13 };
+      if (ci >= 7 && ci <= 9) { cell.numFmt = "dd/mm/yyyy"; cell.alignment = { horizontal: "center", vertical: "middle" }; }
+      if (ci === 10 && certFill[cs.cls]) { cell.fill = solid(certFill[cs.cls][0]); cell.font = { bold: true, color: { argb: certFill[cs.cls][1] } }; cell.alignment = { horizontal: "center", vertical: "middle" }; }
+      if (ci === 12) cell.alignment = { horizontal: "center", vertical: "middle" };
+    });
+    if (c.active === false) row.font = { color: { argb: "FF7F7F7F" } };
+    row.getCell(2).font = { bold: true, color: { argb: c.active === false ? "FF7F7F7F" : "FF000000" } };
+  }
+  ws.columns = [{ width: 10 }, { width: 18 }, { width: 24 }, { width: 20 }, { width: 14 }, { width: 30 }, { width: 13 }, { width: 13 }, { width: 13 }, { width: 22 }, { width: 18 }, { width: 8 }, { width: 50 }];
+  ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: head.length } };
+  ws.pageSetup = { orientation: "landscape", paperSize: 9, fitToPage: true, fitToWidth: 1, fitToHeight: 0, printTitlesRow: "1:1" };
+  const buf = await wb.xlsx.writeBuffer();
+  return new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+}
