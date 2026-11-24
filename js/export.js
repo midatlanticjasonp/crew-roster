@@ -67,6 +67,10 @@ export async function exportExcel(ExcelJS, week, meta, crewById, { stamp } = {})
       }
     }
     if (r === top) { for (let c = 2; c <= 9; c++) ws.getCell(r, c).border = box; r++; }
+    if (stamp?.mode === "lookahead") {
+      const n = Number.isFinite(meta.settings.lookaheadBlankRows) ? meta.settings.lookaheadBlankRows : 3;
+      for (let i = 0; i < n; i++) { for (let c = 2; c <= 9; c++) ws.getCell(r, c).border = box; ws.getRow(r).height = 26; r++; }
+    }
     if (r - 1 > top) ws.mergeCells(top, 1, r - 1, 1);
     const vc = ws.getCell(top, 1);
     vc.value = [vessel.name.replace(/^MV\s+/i, ""), "", vessel.client || vessel.status ? `${vessel.status || "IN SERVICE"}${vessel.client ? " WITH " + vessel.client : ""}` : "", "", vessel.contact || ""].join("\n").trim();
