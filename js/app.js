@@ -238,6 +238,8 @@ function bindRoster() {
 }
 
 // ---------------------------------------------------------------- DAILY BREAKDOWN
+// Empty rows at the bottom of each vessel table on the LOOK-AHEAD print, for handwritten additions.
+const blankRowCount = () => { const n = settings().lookaheadBlankRows; return Number.isFinite(n) ? Math.max(0, Math.min(10, n)) : 3; };
 const vesselNoteLines = (vid) => (S.week.vesselNotes?.[vid] || "").split("\n").map((s) => s.trim()).filter(Boolean);
 // One label per printed line: MATE 1, MATE 2 … (ranks already ending in a number get brackets: ENGINEER 2 (1)).
 const posLabel = (pos, i, n) => (n < 2 ? pos : /\d$/.test(pos) ? `${pos} (${i + 1})` : `${pos} ${i + 1}`);
@@ -255,7 +257,8 @@ function renderBreakdown() {
   const stampTxt = { draft: "DRAFT – not sent", lookahead: "LOOK-AHEAD", confirmed: "CONFIRMED" }[stamp.mode]
     + (stamp.at ? " · printed " + new Date(stamp.at).toLocaleString("en-GB", { day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" }) : "");
   const pages = bd.map(({ vessel, groups, notes, gaps }) => {
-    const totalRows = groups.reduce((n, g) => n + g.rows.length, 0) || 1;
+    const blankN = stamp.mode === "lookahead" ? blankRowCount() : 0;
+    const totalRows = (groups.reduce((n, g) => n + g.rows.length, 0) || 1) + blankN;
     let rows = ""; let first = true;
     const vcell = `<td class="vcell" rowspan="${totalRows}"><div class="vname">${esc(vessel.name.replace(/^MV\s+/i, ""))}</div>
       ${vessel.client || vessel.status ? `<div>${esc((vessel.status || "IN SERVICE") + (vessel.client ? " WITH " + vessel.client : ""))}</div>` : ""}
@@ -271,7 +274,8 @@ function renderBreakdown() {
         }).join("") + "</tr>";
       });
     }
-    if (!groups.length) rows = `<tr>${vcell}<td class="pos"></td>${dates.map(() => "<td></td>").join("")}</tr>`;
+    if (!groups.length) { rows = `<tr>${vcell}<td class="pos"></td>${dates.map(() => "<td></td>").join("")}</tr>`; first = false; }
+    for (let i = 0; i < blankN; i++) { rows += `<tr class="blankrow">${first ? vcell : ""}<td class="pos"></td>${dates.map(() => "<td></td>").join("")}</tr>`; first = false; }
     const gapTxt = gaps.length ? `<div class="screen-gap">Short-handed (not printed): ${gaps.map((g) => `${esc(g.position)} – ${g.short.map((s) => M.DAYS[s.day]).join(", ")}`).join(" · ")}</div>` : "";
     return `<section class="vpage">
       <div class="vp-title">VESSELS - WEEKLY ROSTER ${stamp.mode === "confirmed" ? "" : `<span class="vp-stamp ${stamp.mode}">${esc(stampTxt)}</span>`}</div>
@@ -594,6 +598,14 @@ function renderSignatureCard() {
 // ---------------------------------------------------------------- SETTINGS
 function renderSettings() {
   renderSignatureCard();
+  if (!$("#setBlankRows")) {
+    const f = document.createElement("div"); f.className = "field";
+    f.innerHTML = `<label for="setBlankRows">Empty rows on look-ahead print</label><input id="setBlankRows" type="number" min="0" max="10" style="max-width:90px">
+      <span class="hint">Added to the bottom of each vessel's table on the look-ahead only, for handwritten additions. 0 = none.</span>`;
+    $("#setPortCaptain").closest(".field").after(f);
+    $("#setBlankRows").addEventListener("change", (e) => { settings().lookaheadBlankRows = Math.max(0, Math.min(10, parseInt(e.target.value, 10) || 0)); e.target.value = settings().lookaheadBlankRows; scheduleSave("meta"); });
+  }
+  $("#setBlankRows").value = blankRowCount();
   $("#setCompany").value = settings().company || "";
   $("#setPortCaptain").value = settings().portCaptain || "";
   $("#codesTable").innerHTML = `<thead><tr><th style="width:80px">Code</th><th>Meaning</th><th style="width:140px">Label on printout</th><th>Counts toward manning</th><th>Paid</th><th>Note required</th><th style="width:28px"></th></tr></thead><tbody>` +
