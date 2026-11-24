@@ -215,6 +215,7 @@ export function startNewWeek(prev, settings, crewById) {
     for (let i = 6; i >= 0; i--) if (l.days[i].code) { last = l.days[i].code; break; }
     if (!l.crewId || !last) { if (l.crewId) removed.push({ name, why: "no days entered" }); continue; }
     if (last === "OFF") { removed.push({ name, why: "signed off" }); continue; }
+    if (crewById.get(l.crewId)?.deleted) { removed.push({ name, why: "deleted from crew list" }); continue; }
     const fill = last === "ON" || last === "T" ? "W" : last;
     next.lines.push({ id: uid(), vessel: l.vessel, position: l.position, crewId: l.crewId, days: DAYS.map(() => ({ code: fill, time: "" })),
       note: fill === "W" ? "" : (l.note || ""), relievingCrewId: "" });
