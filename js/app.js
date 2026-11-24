@@ -1,6 +1,6 @@
 import { createStore } from "./store.js";
 import * as M from "./model.js";
-import { exportExcel } from "./export.js";
+import { exportExcel, exportCrewExcel } from "./export.js";
 
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
@@ -333,6 +333,14 @@ function renderCrew() {
       <td><input data-cf="notes" value="${esc(c.notes)}" style="min-width:220px"></td></tr>`; }).join("") + "</tbody>";
 }
 function bindCrew() {
+  const xb = document.createElement("button"); xb.className = "btn"; xb.id = "exportCrew"; xb.textContent = "Export to Excel";
+  $("#addCrew").after(xb);
+  xb.addEventListener("click", async () => {
+    if (!window.ExcelJS) { await dialog("Excel export unavailable", "<p>The Excel library didn't load – check your internet connection and reload the page.</p>", { cancel: "" }); return; }
+    const onWeek = new Map(); S.week.lines.forEach((l) => { if (l.crewId && M.hasDays(l)) onWeek.set(l.crewId, S.meta.vessels.find((v) => v.id === l.vessel)?.name || ""); });
+    const blob = await exportCrewExcel(window.ExcelJS, S.crew, S.meta, S.week, { onWeek });
+    download(blob, `Crew List ${new Date().toISOString().slice(0, 10)}.xlsx`);
+  });
   $("#crewSearch").addEventListener("input", renderCrew);
   $("#crewShowInactive").addEventListener("change", renderCrew);
   $("#addCrew").addEventListener("click", () => {
